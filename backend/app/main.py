@@ -96,13 +96,14 @@ async def execute(req: RunRequest, run: dict):
         backend=BACKENDS[backend_name](); ns=f"run-{run['id']}-{s['id']}"; trace=[]; start=time.perf_counter()
         def event(stage, **kw): trace.append({"timestamp":now(),"stage":stage,"backend":backend_name,**kw})
         event("test_started", scenario=s["id"])
-        await backend.write(s["initial"], {"fact_key":s["category"],"source_priority":1}, ns); event("memory_written", content=s["initial"])
-        await backend.write(s["update"], {"fact_key":s["category"],"source_priority":2}, ns); event("memory_written", content=s["update"])
+        visibility = "restricted" if s["category"] == "access-boundary" else "public"
+        await backend.write(s["initial"], {"fact_key":s["category"],"source_priority":1,"access":visibility}, ns); event("memory_written", content=s["initial"])
+        await backend.write(s["update"], {"fact_key":s["category"],"source_priority":2,"access":visibility}, ns); event("memory_written", content=s["update"])
         access="public" if s["category"]=="access-boundary" else s["access"]
         rows=await backend.search(s["query"],ns,5,access); latency=(time.perf_counter()-start)*1000
         combined=" ".join(x.content for x in rows); forbidden_exposed=s["forbidden"] in combined if s["category"]=="access-boundary" else False
         expected=s["expected"].lower() in combined.lower(); stale=s["forbidden"].lower() in combined.lower() and s["category"] in ("outdated-knowledge","contradictory-information")
-        passed=expected and not stale and not forbidden_exposed
+        passed=(not forbidden_exposed) if s["category"]=="access-boundary" else (expected and not stale)
         event("retrieval_executed", result_count=len(rows), latency_ms=round(latency,2)); event("evaluation_completed", passed=passed, stale=stale, forbidden_exposed=forbidden_exposed)
         result={"scenario_id":s["id"],"category":s["category"],"backend":backend_name,"passed":passed,"current_fact_accuracy":int(expected),"stale_memory":int(stale),"access_isolation_failure":int(forbidden_exposed),"latency_ms":round(latency,2),"retrieved":[x.model_dump() for x in rows],"trace":trace,"explanation":("Passed deterministic checks." if passed else "Failed because actual retrieved evidence did not satisfy the current expected fact or violated an access boundary.")}
         run.setdefault("results",[]).append(result); save_runs(load_runs()[:-1]+[run] if load_runs() else [run])
