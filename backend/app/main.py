@@ -1,4 +1,4 @@
-"""MemoryGuard: deterministic memory evaluation service."""
+"""MemoryScope: deterministic memory evaluation service."""
 from __future__ import annotations
 import asyncio, json, os, statistics, time, uuid
 from datetime import datetime, timezone
@@ -8,14 +8,17 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-DATA = Path(os.getenv("MEMORYGUARD_DATA", Path(__file__).parents[2] / "data"))
+DATA = Path(os.getenv("MEMORYSCOPE_DATA", Path(__file__).parents[2] / "data"))
 DATA.mkdir(parents=True, exist_ok=True)
 STORE = DATA / "runs.json"
+AGENTS_STORE = DATA / "agents.json"
 
 def now() -> str: return datetime.now(timezone.utc).isoformat()
 def load_runs() -> list[dict]:
     return json.loads(STORE.read_text()) if STORE.exists() else []
 def save_runs(runs: list[dict]): STORE.write_text(json.dumps(runs, indent=2))
+def load_agents() -> list[dict]: return json.loads(AGENTS_STORE.read_text()) if AGENTS_STORE.exists() else []
+def save_agents(agents: list[dict]): AGENTS_STORE.write_text(json.dumps(agents, indent=2))
 
 class MemoryResult(BaseModel):
     id: str; content: str; metadata: dict[str, Any] = {}; score: float = 1.0
@@ -38,6 +41,11 @@ class LocalDemoAgent:
     name = "local-demo-agent"
     async def answer(self, query: str, agent_identity: str, namespace: str, context: dict) -> AgentResponse:
         return AgentResponse(answer=context.get("retrieved_text", "No evidence retrieved."))
+
+class AgentConnection(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    endpoint: str = Field(pattern=r"^https?://")
+    auth_type: str = Field(default="bearer", pattern=r"^(bearer|none)$")
 
 class KeywordMemory:
     name = "baseline-rag"
@@ -88,7 +96,7 @@ class RunRequest(BaseModel):
     backends: list[str] = Field(default_factory=lambda: list(BACKENDS))
     repetitions: int = Field(1, ge=1, le=20)
 
-app = FastAPI(title="MemoryGuard API", version="0.1.0")
+app = FastAPI(title="MemoryScope API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","), allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/api/health")
@@ -98,7 +106,11 @@ async def backends(): return [{"id":k,"name":k,"available":True,"kind":"local"} 
 @app.get("/api/scenarios")
 async def list_scenarios(): return SCENARIOS
 @app.get("/api/agents")
-async def agents(): return [{"id":"local-demo-agent","name":"Local demo agent","available":True,"kind":"deterministic"},{"id":"http-agent","name":"HTTP agent","available":False,"kind":"optional","reason":"endpoint not configured"}]
+async def agents(): return [{"id":"local-demo-agent","name":"Local demo agent","available":True,"kind":"deterministic","status":"ready"}] + load_agents()
+@app.post("/api/agents/connections", status_code=201)
+async def connect_agent(connection: AgentConnection):
+    item={"id":str(uuid.uuid4()),"name":connection.name,"endpoint":connection.endpoint,"auth_type":connection.auth_type,"kind":"http","status":"configured","verified":False,"note":"Endpoint saved without storing credentials. Run a connection test before benchmarking."}
+    agents=load_agents(); agents.append(item); save_agents(agents); return item
 
 async def execute(req: RunRequest, run: dict):
     run["status"]="running"; save_runs(load_runs())

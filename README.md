@@ -1,8 +1,8 @@
-# MemoryGuard
+# MemoryScope
 
 **Break AI memory before it breaks your agents.**
 
-MemoryGuard is a reproducible, deterministic benchmark for persistent AI memory. The local MVP executes six adversarial scenario categories against two real in-process adapters: a keyword RAG baseline and a version-aware memory engine. Results and traces are persisted to `data/runs.json` and are served to the dashboard through FastAPI.
+MemoryScope is a reproducible, deterministic evaluation and observability product for persistent AI memory. It is distinct from runtime memory-defense middleware: MemoryScope evaluates whether an agent’s memory remains current, isolated, and reliable. The local MVP executes six adversarial scenario categories against two real in-process adapters: a keyword RAG baseline and a version-aware memory engine.
 
 ## Run locally
 
