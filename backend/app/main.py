@@ -77,7 +77,7 @@ class RunRequest(BaseModel):
     repetitions: int = Field(1, ge=1, le=20)
 
 app = FastAPI(title="MemoryGuard API", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","), allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","), allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/api/health")
 async def health(): return {"status":"ok", "mode":"deterministic", "external_integrations":"unverified"}
