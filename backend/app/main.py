@@ -1,6 +1,7 @@
 """MemoryScope: deterministic memory evaluation service."""
 from __future__ import annotations
 import asyncio, json, os, statistics, time, uuid
+import httpx
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -111,6 +112,29 @@ async def agents(): return [{"id":"local-demo-agent","name":"Local demo agent","
 async def connect_agent(connection: AgentConnection):
     item={"id":str(uuid.uuid4()),"name":connection.name,"endpoint":connection.endpoint,"auth_type":connection.auth_type,"kind":"http","status":"configured","verified":False,"note":"Endpoint saved without storing credentials. Run a connection test before benchmarking."}
     agents=load_agents(); agents.append(item); save_agents(agents); return item
+@app.post("/api/agents/{agent_id}/test")
+async def test_agent(agent_id: str):
+    agents=load_agents(); item=next((a for a in agents if a["id"]==agent_id),None)
+    if not item: raise HTTPException(404,"Agent connection not found")
+    payload={"messages":[{"role":"user","content":"What is the current refund policy?"}]}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response=await client.post(item["endpoint"],json=payload,headers={"Accept":"text/event-stream"})
+        response.raise_for_status()
+        text=response.text; citations=[]; answer=[]
+        for line in text.splitlines():
+            if not line.startswith("data: "): continue
+            try:
+                event=json.loads(line[6:])
+                if event.get("nrouter_event")=="citations": citations=event.get("citations",[])
+                delta=event.get("choices",[{}])[0].get("delta",{}).get("content")
+                if delta: answer.append(delta)
+            except json.JSONDecodeError: continue
+        item.update({"status":"verified","verified":True,"last_test":{"status_code":response.status_code,"answer":"".join(answer),"citations":citations,"tested_at":now()}}); save_agents(agents)
+        return item
+    except Exception as exc:
+        item.update({"status":"unreachable","verified":False,"last_test":{"error":str(exc),"tested_at":now()}}); save_agents(agents)
+        raise HTTPException(502,"Agent endpoint could not be verified")
 
 async def execute(req: RunRequest, run: dict):
     run["status"]="running"; save_runs(load_runs())
