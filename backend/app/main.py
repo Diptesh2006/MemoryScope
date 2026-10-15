@@ -27,6 +27,18 @@ class MemoryBackend(Protocol):
     async def search(self, query: str, namespace: str, top_k: int = 5, access: str = "public") -> list[MemoryResult]: ...
     async def reset(self, namespace: str) -> None: ...
 
+class AgentResponse(BaseModel):
+    answer: str
+    evidence_ids: list[str] = []
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+class LocalDemoAgent:
+    """Credential-free deterministic agent used for repeatable product demos."""
+    name = "local-demo-agent"
+    async def answer(self, query: str, agent_identity: str, namespace: str, context: dict) -> AgentResponse:
+        return AgentResponse(answer=context.get("retrieved_text", "No evidence retrieved."))
+
 class KeywordMemory:
     name = "baseline-rag"
     def __init__(self): self.items: dict[str, list[MemoryResult]] = {}
@@ -85,6 +97,8 @@ async def health(): return {"status":"ok", "mode":"deterministic", "external_int
 async def backends(): return [{"id":k,"name":k,"available":True,"kind":"local"} for k in BACKENDS] + [{"id":"alchemyst","name":"alchemyst","available":False,"kind":"external","reason":"credentials not configured"}]
 @app.get("/api/scenarios")
 async def list_scenarios(): return SCENARIOS
+@app.get("/api/agents")
+async def agents(): return [{"id":"local-demo-agent","name":"Local demo agent","available":True,"kind":"deterministic"},{"id":"http-agent","name":"HTTP agent","available":False,"kind":"optional","reason":"endpoint not configured"}]
 
 async def execute(req: RunRequest, run: dict):
     run["status"]="running"; save_runs(load_runs())
@@ -113,6 +127,10 @@ async def execute(req: RunRequest, run: dict):
 async def start(req: RunRequest, tasks: BackgroundTasks):
     if any(x not in BACKENDS for x in req.backends): raise HTTPException(400,"Only local backends are currently available")
     run={"id":str(uuid.uuid4()),"status":"pending","created_at":now(),"results":[],"config":req.model_dump()}; runs=load_runs(); runs.append(run); save_runs(runs); tasks.add_task(execute,req,run); return run
+@app.post("/api/demo/run", status_code=202)
+async def demo_run(tasks: BackgroundTasks):
+    req = RunRequest(scenario_ids=["outdated-knowledge-01","access-boundary-05","memory-poisoning-06"], backends=["baseline-rag","version-aware"], repetitions=1)
+    return await start(req, tasks)
 @app.get("/api/benchmarks/runs")
 async def runs(): return load_runs()
 @app.get("/api/benchmarks/runs/{run_id}")
