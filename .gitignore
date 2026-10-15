@@ -6,3 +6,4 @@ node_modules/
 .next/
 data/runs.json
 .env
+.playwright-cli/
