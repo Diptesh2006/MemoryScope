@@ -183,6 +183,10 @@ async def cancel(run_id:str):
 async def traces(run_id:str): return [t for r in (await run(run_id))["results"] for t in r["trace"]]
 @app.get("/api/benchmarks/runs/{run_id}/results")
 async def results(run_id:str): return (await run(run_id))["results"]
+@app.get("/api/benchmarks/runs/{run_id}/report")
+async def report(run_id:str):
+    item=await run(run_id); rows=item.get("results",[])
+    return {"product":"MemoryScope","run_id":item["id"],"status":item["status"],"created_at":item["created_at"],"summary":{"evaluations":len(rows),"passed":sum(bool(x["passed"]) for x in rows),"failed":sum(not x["passed"] for x in rows),"accuracy":round(sum(x["current_fact_accuracy"] for x in rows)/len(rows),3) if rows else 0,"stale_rate":round(sum(x["stale_memory"] for x in rows)/len(rows),3) if rows else 0},"failures":[{"scenario_id":x["scenario_id"],"category":x["category"],"backend":x["backend"],"explanation":x["explanation"],"retrieved":x["retrieved"],"trace":x["trace"]} for x in rows if not x["passed"]]}
 @app.get("/api/analytics/overview")
 async def overview():
     rs=load_runs(); results=[x for r in rs for x in r.get("results",[])]; n=len(results)

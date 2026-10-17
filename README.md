@@ -24,6 +24,8 @@ npm run dev
 
 Open `http://localhost:3000`. API docs are at `http://localhost:8000/docs`.
 
+To connect an existing agent, use the dashboard's Connected agents form with its HTTP chat endpoint, then click Verify. MemoryScope stores the endpoint metadata but never stores API keys. A verified connection returns the live response status, answer text, and citations. Use the run report endpoint to export evidence for review or CI artifacts.
+
 Run a benchmark:
 
 ```powershell
