@@ -5,6 +5,7 @@ __pycache__/
 node_modules/
 .next/
 data/*.json
+data/*.sqlite3*
 .env
 .playwright-cli/
 work/

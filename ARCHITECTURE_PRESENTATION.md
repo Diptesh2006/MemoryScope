@@ -1,5 +1,10 @@
 # MemoryScope — Architecture for Presentation
 
+> Historical concept deck, not the current beta capability list. Use
+> [ARCHITECTURE.md](ARCHITECTURE.md) and [README.md](README.md) when presenting the
+> implemented developer beta. Persistent-memory lifecycle claims below describe
+> planned work, not verified product functionality.
+
 ## One-line explanation
 
 MemoryScope is the evaluation and observability layer between an AI agent and the team deploying it. It runs controlled memory tests, captures evidence, and reports whether the agent remembers information accurately, safely, and consistently over time.

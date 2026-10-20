@@ -1,20 +1,42 @@
-# API
+# MemoryScope developer beta API
 
-Interactive OpenAPI documentation is available at `/docs` when the backend is running.
+OpenAPI schemas: `http://127.0.0.1:8000/docs`. Loopback-only, single-user deployment.
 
-- `GET /api/health`
-- `GET /api/backends`
-- `GET /api/scenarios`
-- `POST /api/benchmarks/run`
-- `GET /api/benchmarks/runs`
-- `GET /api/benchmarks/runs/{id}`
-- `GET /api/benchmarks/runs/{id}/traces`
-- `GET /api/benchmarks/runs/{id}/results`
-- `GET /api/benchmarks/runs/{id}/report`
-- `POST /api/benchmarks/runs/{id}/cancel`
-- `GET /api/analytics/overview`
-- `GET /api/analytics/comparison`
-- `GET /api/analytics/failures`
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/health` | Process health, not upstream readiness |
+| `GET /api/beta/settings` | Judge configured flag, model, pipeline, limits, allowed origins; no keys |
+| `POST /api/beta/runs` | Validate and enqueue real evaluation; HTTP 202 |
+| `GET /api/beta/runs` | Latest 100 run summaries |
+| `GET /api/beta/runs/{id}` | Status and full evidence |
+| `GET /api/beta/runs/{id}/report` | Portable JSON report |
+| `POST /api/beta/runs/{id}/cancel` | Cancel remaining work, not already-billed calls |
+| `GET /api/beta/compare/{before}/{after}` | Per-case comparison for completed identical suites |
 
-The report endpoint returns a portable JSON summary plus failed evaluations, retrieved evidence, and trace events. It is intended for attaching benchmark evidence to an issue, review, or CI artifact.
+Start request:
 
+```json
+{
+  "agent_name": "My support agent",
+  "endpoint": "http://127.0.0.1:4175/api/chat",
+  "auth_env": null,
+  "send_to_judge": true,
+  "cases": [{
+    "name": "Refund",
+    "question": "What is the refund window?",
+    "reference": "Refunds within 14 days.",
+    "expected": "State 14 days.",
+    "required_literals": ["14"],
+    "forbidden_literals": [],
+    "require_citations": false
+  }]
+}
+```
+
+Use your actual policy, not the illustrative reference above.
+HTTP 422: invalid schema, unapproved endpoint, missing consent, incompatible comparison.
+HTTP 503: judge not configured. HTTP 409: another active run or cancellation of terminal run.
+Run statuses: pending, running, completed, failed, cancelled. Case statuses: pass, fail, error, inconclusive.
+`completed` means evaluation finished, not that every case passed. Judge/provider errors make the run `failed`.
+
+The previous `/api/benchmarks/*`, `/api/agents/*`, and `/api/analytics/*` synthetic endpoints are intentionally no longer mounted.

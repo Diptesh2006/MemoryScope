@@ -1,6 +1,40 @@
-# Architecture
+# Developer beta architecture
 
-The backend is a deliberately small monolith. `MemoryBackend` is the adapter contract; `KeywordMemory` models conventional retrieval and `VersionedMemory` suppresses superseded facts using a fact key. The scenario library is deterministic and produces 30 reproducible cases across six categories. Each execution records retrieval evidence, latency, evaluation flags, and an explanation. The frontend consumes only API responses.
+```text
+Local dashboard
+  │ endpoint + user-authored cases + consent
+  ▼
+FastAPI validation ──► SQLite run history
+  │ single-process background execution
+  ▼
+nRouter support agent /api/chat
+  │ question only → validated SSE answer
+  ▼
+Literal / citation-presence checks
+  │ answer + approved reference + expected behavior
+  ▼
+Required nRouter LLM judge
+  │ strict JSON + verbatim evidence validation
+  ▼
+Final case verdict ──► SQLite ──► dashboard / report / comparison
+```
 
-For production, replace the JSON repository with SQLAlchemy/PostgreSQL + pgvector, add migrations and a durable queue, then implement authorization in the adapter query itself. External integrations must remain explicitly unavailable until a live credentialed test passes.
+`app/main.py` loads root `.env` and mounts only `app/beta.py`. The old experiments in
+`app/legacy_demo.py` are not production routes. Frontend forms and history use `/api/beta`.
+SQLite transactions protect run admission and cancellation. On startup, unfinished
+runs become failed; no automatic resumption or paid retries.
 
+The judge is required, not an optional plugin. A deterministic failure overrides
+a valid semantic pass. Judge errors are unscored, and insufficient reference evidence
+is inconclusive. Evidence quotes are checked against input; that does not make the
+judge infallible or immune to prompt injection.
+
+Local trust boundary: server-owned credentials, explicit agent-origin allowlist,
+redirects disabled, response/time limits, references withheld from agent prompts.
+No hosted authentication, tenant isolation or durable queue. Browser consent covers
+sending user-provided references and answers to nRouter. Data remains in local reports
+and may also be retained by the provider under its applicable policy.
+
+Current scope is answer correctness, not memory lifecycle verification.
+To test deletion, conflicting updates or cross-session isolation, add explicit
+fixture setup/reset and session adapters before making those claims.

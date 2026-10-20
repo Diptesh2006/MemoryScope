@@ -1,4 +1,4 @@
-from app.main import SCENARIOS, VersionedMemory
+from app.legacy_demo import SCENARIOS, VersionedMemory
 import pytest
 
 def test_has_thirty_scenarios(): assert len(SCENARIOS) >= 30

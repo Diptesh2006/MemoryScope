@@ -1,108 +1,135 @@
 # MemoryScope
 
-**Know when your AI agent's memory can no longer be trusted.**
+Local developer beta for evaluating a real nRouter customer-support agent against approved facts.
 
-MemoryScope is an open-source evaluation and observability product for AI agents with persistent memory. It tests whether an agent remembers current information, handles updates, respects access boundaries, and resists memory poisoning.
+**Not a hosted multi-user service, memory firewall, or proof of persistent-memory correctness.**
+The beta tests individual answers; lifecycle testing needs session/seed/reset adapters that are not yet implemented.
+The original synthetic memory experiments are archived in `backend/app/legacy_demo.py` and are not exposed by the beta API.
 
-MemoryScope is not runtime memory-defense middleware. It evaluates an existing agent and memory backend before deployment or as part of regression testing.
+## What a user provides
 
-## What it evaluates
+1. A running support agent with an SSE chat endpoint (default `http://127.0.0.1:4175/api/chat`).
+2. A JSON array of 1–20 cases: question, approved reference, expected behavior, and optional literal/citation-presence checks.
+3. A server-side nRouter key and judge model available in their account.
+4. Explicit consent to send the references and agent answers to nRouter.
 
-- Outdated knowledge and superseded policies
-- Contradictory information and source priority
-- Cross-session recall
-- Cross-agent handoff
-- Access-boundary violations
-- Memory poisoning attempts
+MemoryScope sends **only the question** to the agent. It captures the real answer, applies deterministic checks, and then uses a **required reference-grounded LLM judge**. It saves evidence, verdicts and model metadata locally in SQLite.
 
-The repository includes 30 deterministic synthetic scenarios, a baseline retrieval backend, a version-aware backend, persisted traces, and a local demo agent that works without paid API credentials.
+## Start locally
 
-## Run locally
-
-Backend:
+Use Python 3.11+ and Node 22. From the repository root:
 
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+pip install -r backend/requirements.txt
+Copy-Item .env.example .env
 ```
 
-Frontend, in another terminal:
+Edit `.env` (never commit it):
+
+```dotenv
+NROUTER_API_KEY=your-key
+NROUTER_JUDGE_MODEL=your-supported-model-id
+MEMORYSCOPE_AGENT_ORIGINS=http://127.0.0.1:4175
+```
+
+There is no optional-judge switch or silent fallback. A model must be explicitly pinned for comparable runs.
+The pipeline is fixed; the model ID depends on your nRouter account. No model is claimed universally best.
+Requests use the [nRouter chat completions API](https://nrouter.ai/docs/api-reference/chat-completions).
+
+Start the backend from the repository root:
+
+```powershell
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
 
 ```powershell
 cd frontend
-npm install
-npx next dev --turbopack
+npm ci
+npm run build
+npm run start -- --hostname 127.0.0.1 --port 3000
 ```
 
-Open the dashboard at [http://127.0.0.1:3000](http://127.0.0.1:3000). API documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Open `http://127.0.0.1:3000`. If the support-agent frontend already uses port 3000, run MemoryScope on 3001 and add `http://127.0.0.1:3001` to `CORS_ORIGINS` in `.env`; restart the backend.
+Do not run `next dev` and `next build` concurrently in the same folder.
+Restart the backend after changing environment variables.
 
-## Connect an existing agent
+Docker Compose is provided for local development, not production hosting.
+Inside Docker, `127.0.0.1` points to the container, not your host agent.
+On Docker Desktop, use `http://host.docker.internal:4175/api/chat` and explicitly
+allowlist `http://host.docker.internal:4175` in `.env` instead.
 
-1. Run the agent locally or deploy it.
-2. Open the MemoryScope dashboard.
-3. Enter its HTTP chat endpoint under **Connected agents**.
-4. Click **Verify**.
-5. Run a benchmark and inspect the recorded evidence.
+## First real evaluation
 
-MemoryScope currently supports HTTP/SSE agent verification. It stores endpoint metadata, never API keys. A connection is marked `verified` only after a real HTTP response is received.
-
-LLM judging is intentionally optional. Deterministic checks run without an LLM and should remain the release gate for facts, freshness, and access control. If semantic judging is later enabled, configure a server-side OpenAI-compatible provider through `LLM_JUDGE_ENABLED`, `LLM_JUDGE_BASE_URL`, `LLM_JUDGE_MODEL`, and `LLM_JUDGE_API_KEY`; never place those values in the browser.
-
-Example endpoint:
+Run your nRouter support agent separately. Its supported response contract is:
 
 ```text
-http://127.0.0.1:4175/api/chat
+data: {"choices":[{"delta":{"content":"Your answer"}}]}
+
+data: [DONE]
 ```
 
-## Run a benchmark through the API
+Response type must be `text/event-stream`. Error events, empty answers, incomplete streams, and HTML responses are rejected. `nrouter_event` citations and cost events are captured when present.
 
-```powershell
-$body = '{"scenario_ids":["outdated-knowledge-01","access-boundary-05"],"backends":["baseline-rag","version-aware"],"repetitions":1}'
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/benchmarks/run -ContentType 'application/json' -Body $body
+Paste the agent endpoint in the dashboard. Replace the sample reference with a verified excerpt from **your agent's actual knowledge base**. Example schema (illustrative policy, not a claim about your agent):
+
+```json
+[
+  {
+    "name": "Refund window",
+    "question": "How long do I have to request a refund?",
+    "reference": "Customers may request a refund within 14 days of purchase.",
+    "expected": "State that the refund window is 14 days.",
+    "required_literals": ["14"],
+    "forbidden_literals": ["30 days"],
+    "require_citations": false
+  }
+]
 ```
 
-After receiving the run ID, retrieve results or an exportable report:
+Approve transmission and click **Run evaluation**. Expand each case to inspect the actual answer, approved reference, checks, judge rationale and supporting quotes. Export the report before sharing it; it contains your reference text and agent answers.
+After changing your agent, rerun the same cases and compare with a completed baseline.
 
-```text
-GET /api/benchmarks/runs/{id}/results
-GET /api/benchmarks/runs/{id}/report
-GET /api/benchmarks/runs/{id}/traces
-```
+For authenticated agents, set a variable such as `MEMORYSCOPE_AGENT_SUPPORT_TOKEN` server-side and enter **that variable name**, not its value, in the dashboard.
 
-## Architecture
+## Evaluation policy
 
-```mermaid
-flowchart LR
- UI[MemoryScope Dashboard] --> API[FastAPI Control API]
- API --> ORCH[Benchmark Orchestrator]
- ORCH --> S[Scenario Library]
- ORCH --> A[Agent Adapter]
- ORCH --> M[Memory Adapter Registry]
- A --> AG[Customer Agent or Local Demo Agent]
- M --> R[RAG Baseline]
- M --> V[Version-Aware Memory]
- ORCH --> E[Deterministic Evaluation]
- E --> T[Evidence and Trace Store]
- T --> UI
-```
+- Literal checks are case-insensitive substring tests, not semantic reasoning. Citation checks establish presence only, not citation authenticity.
+- The judge evaluates semantic correctness and unsupported material claims against the supplied reference and expected behavior.
+- Pass/fail judgments require verbatim supporting quotes from both answer and reference; invalid JSON and ungrounded quotes are errors.
+- A deterministic failure overrides a valid passing judge judgment.
+- Insufficient reference evidence produces **inconclusive**, never pass.
+- Provider/configuration/protocol failures produce **error**, never pass. If the judge fails after the agent answers, that answer remains in the report.
+- Pass rate uses only pass + fail as its denominator. Errors and inconclusive counts remain visible; a high pass rate with poor coverage is not release approval.
+- Judge decisions remain fallible. Human-review disputed cases and calibrate against labelled examples before using scores for release decisions.
+- One sequential run at a time, at most 20 cases, one agent call and one judge call per case, no automatic paid retries. Maximum 65 seconds per stage and 1 MB response limit.
+- Cancellation prevents subsequent dispatches; an already in-flight provider request may complete and incur charges.
+- Compare requires identical cases, pipeline and configured model. Provider routing can still change; reports include the returned model when supplied.
 
-## Verification
+## Data and deployment boundaries
 
-Run the backend test suite from the repository root:
+SQLite history lives in `data/beta.sqlite3` by default. `.env` and database files are ignored by git.
+The API does not accept raw keys. Local reports contain potentially sensitive content: use synthetic/test customer data, protect disk access, and delete local database files only when the service is stopped if you want to clear history.
+Provider retention and billing follow your nRouter configuration; MemoryScope does not promise zero retention.
+
+**Bind to loopback only.** No user authentication, tenant isolation, encryption at rest, rate limiting, or hosted-worker durability is provided.
+Explicit operator-controlled origins and disabled redirects limit outbound destinations; this is not a hardened internet-facing SSRF boundary.
+Run one backend process. Interrupted runs are marked failed on restart; they are not silently resumed or billed again.
+
+## Tests
 
 ```powershell
 python -m pytest -q
+cd frontend
+npm run build
 ```
 
-The GitHub Actions workflow repeats this check on every push and pull request.
+Automated tests use isolated SQLite files and mocked provider responses. They test the real evaluation code, not the accuracy of a live model. A paid end-to-end evaluation requires your credentials and running agent.
+See [API.md](API.md) for beta endpoints.
 
-Benchmark runs are persisted with explicit `pending`, `running`, `completed`, `failed`, and `cancelled` states. Cancellation and unexpected execution errors are recorded rather than being converted into passing results.
+## Next milestones
 
-## Current limitations
-
-The local MVP uses JSON persistence for reproducibility. PostgreSQL/pgvector, Alembic migrations, authentication, rate limiting, LLM judging, and a live Alchemyst adapter are not yet implemented as working features. They are documented as future integrations rather than simulated. The current benchmark executes local memory backends; direct scoring of a verified external agent is the next integration step.
-
-See [ARCHITECTURE_PRESENTATION.md](ARCHITECTURE_PRESENTATION.md) for the detailed architecture and presenter script.
+Session-aware seed/reset adapters; labelled judge calibration; CI exit-code integration; authenticated hosted deployment with isolated workers and retention controls. These are not current beta capabilities.
