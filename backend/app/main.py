@@ -13,11 +13,14 @@ DATA = Path(os.getenv("MEMORYSCOPE_DATA", Path(__file__).parents[2] / "data"))
 DATA.mkdir(parents=True, exist_ok=True)
 STORE = DATA / "runs.json"
 AGENTS_STORE = DATA / "agents.json"
+RUN_LOCK = asyncio.Lock()
 
 def now() -> str: return datetime.now(timezone.utc).isoformat()
 def load_runs() -> list[dict]:
     return json.loads(STORE.read_text()) if STORE.exists() else []
 def save_runs(runs: list[dict]): STORE.write_text(json.dumps(runs, indent=2))
+def persist_run(run: dict):
+    runs=load_runs(); save_runs([run if x.get("id")==run.get("id") else x for x in runs] or [run])
 def load_agents() -> list[dict]: return json.loads(AGENTS_STORE.read_text()) if AGENTS_STORE.exists() else []
 def save_agents(agents: list[dict]): AGENTS_STORE.write_text(json.dumps(agents, indent=2))
 
@@ -137,11 +140,13 @@ async def test_agent(agent_id: str):
         raise HTTPException(502,"Agent endpoint could not be verified")
 
 async def execute(req: RunRequest, run: dict):
-    run["status"]="running"; save_runs(load_runs())
+    run["status"]="running"; run["started_at"]=now(); persist_run(run)
     selected=[s for s in SCENARIOS if s["id"] in req.scenario_ids]
-    for _ in range(req.repetitions):
+    try:
+     for _ in range(req.repetitions):
       for s in selected:
        for backend_name in req.backends:
+        if load_runs() and next((x for x in load_runs() if x.get("id")==run["id"]),run).get("status")=="cancelled": return
         if backend_name not in BACKENDS: continue
         backend=BACKENDS[backend_name](); ns=f"run-{run['id']}-{s['id']}"; trace=[]; start=time.perf_counter()
         def event(stage, **kw): trace.append({"timestamp":now(),"stage":stage,"backend":backend_name,**kw})
@@ -156,8 +161,10 @@ async def execute(req: RunRequest, run: dict):
         passed=(not forbidden_exposed) if s["category"]=="access-boundary" else (expected and not stale)
         event("retrieval_executed", result_count=len(rows), latency_ms=round(latency,2)); event("evaluation_completed", passed=passed, stale=stale, forbidden_exposed=forbidden_exposed)
         result={"scenario_id":s["id"],"category":s["category"],"backend":backend_name,"passed":passed,"current_fact_accuracy":int(expected),"stale_memory":int(stale),"access_isolation_failure":int(forbidden_exposed),"latency_ms":round(latency,2),"retrieved":[x.model_dump() for x in rows],"trace":trace,"explanation":("Passed deterministic checks." if passed else "Failed because actual retrieved evidence did not satisfy the current expected fact or violated an access boundary.")}
-        run.setdefault("results",[]).append(result); save_runs(load_runs()[:-1]+[run] if load_runs() else [run])
-    run["status"]="completed"; run["completed_at"]=now(); runs=load_runs(); save_runs([run if x["id"]==run["id"] else x for x in runs])
+        run.setdefault("results",[]).append(result); persist_run(run)
+     run["status"]="completed"; run["completed_at"]=now(); persist_run(run)
+    except Exception as exc:
+     run["status"]="failed"; run["completed_at"]=now(); run["error"]={"type":type(exc).__name__,"message":str(exc)}; persist_run(run)
 
 @app.post("/api/benchmarks/run", status_code=202)
 async def start(req: RunRequest, tasks: BackgroundTasks):

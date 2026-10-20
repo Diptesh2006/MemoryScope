@@ -49,6 +49,8 @@ Open the dashboard at [http://127.0.0.1:3000](http://127.0.0.1:3000). API docume
 
 MemoryScope currently supports HTTP/SSE agent verification. It stores endpoint metadata, never API keys. A connection is marked `verified` only after a real HTTP response is received.
 
+LLM judging is intentionally optional. Deterministic checks run without an LLM and should remain the release gate for facts, freshness, and access control. If semantic judging is later enabled, configure a server-side OpenAI-compatible provider through `LLM_JUDGE_ENABLED`, `LLM_JUDGE_BASE_URL`, `LLM_JUDGE_MODEL`, and `LLM_JUDGE_API_KEY`; never place those values in the browser.
+
 Example endpoint:
 
 ```text
@@ -96,6 +98,8 @@ python -m pytest -q
 ```
 
 The GitHub Actions workflow repeats this check on every push and pull request.
+
+Benchmark runs are persisted with explicit `pending`, `running`, `completed`, `failed`, and `cancelled` states. Cancellation and unexpected execution errors are recorded rather than being converted into passing results.
 
 ## Current limitations
 
