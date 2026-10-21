@@ -1,6 +1,6 @@
 # MemoryScope
 
-Local developer beta for evaluating a real nRouter customer-support agent against approved facts.
+Local developer beta for evaluating a real customer-support agent against approved facts.
 
 **Not a hosted multi-user service, memory firewall, or proof of persistent-memory correctness.**
 The beta tests individual answers; lifecycle testing needs session/seed/reset adapters that are not yet implemented.
@@ -10,8 +10,8 @@ The original synthetic memory experiments are archived in `backend/app/legacy_de
 
 1. A running support agent with an SSE chat endpoint (default `http://127.0.0.1:4175/api/chat`).
 2. A JSON array of 1–20 cases: question, approved reference, expected behavior, and optional literal/citation-presence checks.
-3. A server-side nRouter key and judge model available in their account.
-4. Explicit consent to send the references and agent answers to nRouter.
+3. A server-side API key and judge model for a supported LLM provider.
+4. Explicit consent to send the references and agent answers to that provider.
 
 MemoryScope sends **only the question** to the agent. It captures the real answer, applies deterministic checks, and then uses a **required reference-grounded LLM judge**. It saves evidence, verdicts and model metadata locally in SQLite.
 
@@ -26,18 +26,9 @@ pip install -r backend/requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` (never commit it):
+Edit `.env` (never commit it) with your LLM provider credentials, base URL, model ID, and the allowed target origin. Use the variable names shown in [`.env.example`](.env.example):
 
-```dotenv
-NROUTER_API_KEY=your-key
-NROUTER_BASE_URL=https://api.nrouter.ai/v1
-NROUTER_JUDGE_MODEL=your-supported-model-id
-MEMORYSCOPE_AGENT_ORIGINS=http://127.0.0.1:4175
-```
-
-There is no optional-judge switch or silent fallback. A model must be explicitly pinned for comparable runs.
-The pipeline is fixed; the model ID depends on your nRouter account. No model is claimed universally best.
-Requests use the configured nRouter-compatible chat completions base URL (default `https://api.nrouter.ai/v1`). Non-loopback provider URLs must use HTTPS. See the [nRouter chat completions API](https://nrouter.ai/docs/api-reference/chat-completions).
+There is no optional-judge switch or silent fallback. A model must be explicitly configured for comparable runs. The evaluation pipeline is fixed; choose a model available in your provider account. No model is claimed universally best. The judge uses an OpenAI-compatible chat-completions API at the configured base URL. Non-loopback provider URLs must use HTTPS. See `.env.example` and the provider's API documentation for configuration details.
 
 Start the backend from the repository root:
 
@@ -65,7 +56,7 @@ allowlist `http://host.docker.internal:4175` in `.env` instead.
 
 ## First real evaluation
 
-Run your nRouter support agent separately. Its supported response contract is:
+Run your support agent separately. Its supported response contract is:
 
 ```text
 data: {"choices":[{"delta":{"content":"Your answer"}}]}
@@ -73,7 +64,7 @@ data: {"choices":[{"delta":{"content":"Your answer"}}]}
 data: [DONE]
 ```
 
-Response type must be `text/event-stream`. Error events, empty answers, incomplete streams, and HTML responses are rejected. `nrouter_event` citations and cost events are captured when present.
+Response type must be `text/event-stream`. Error events, empty answers, incomplete streams, and HTML responses are rejected. Provider-specific citation and cost events are captured when present.
 
 Paste the agent endpoint in the dashboard. Replace the sample reference with a verified excerpt from **your agent's actual knowledge base**. Example schema (illustrative policy, not a claim about your agent):
 
@@ -114,7 +105,7 @@ For authenticated agents, set a variable such as `MEMORYSCOPE_AGENT_SUPPORT_TOKE
 
 SQLite history lives in `data/beta.sqlite3` by default. `.env` and database files are ignored by git.
 The API does not accept raw keys. Local reports contain potentially sensitive content: use synthetic/test customer data, protect disk access, and delete local database files only when the service is stopped if you want to clear history.
-Provider retention and billing follow your nRouter configuration; MemoryScope does not promise zero retention.
+Data retention and billing follow your LLM provider's terms and configuration; MemoryScope does not promise zero retention.
 
 **Bind to loopback only.** No user authentication, tenant isolation, encryption at rest, rate limiting, or hosted-worker durability is provided.
 Explicit operator-controlled origins and disabled redirects limit outbound destinations; this is not a hardened internet-facing SSRF boundary.
