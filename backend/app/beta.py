@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/beta")
 ROOT = Path(__file__).resolve().parents[2]
 DB = Path(os.getenv("MEMORYSCOPE_DATA", str(ROOT / "data"))) / "beta.sqlite3"
 PROMPT_VERSION = "support-grounded-v1"
+INTEGRATION_CONTRACT = "memoryscope-answer-evaluation-v1"
 MAX_BYTES = 1_000_000
 
 
@@ -283,6 +284,25 @@ def settings():
             "pipeline": PROMPT_VERSION, "max_cases": 20,
             "allowed_origins": os.getenv("MEMORYSCOPE_AGENT_ORIGINS", "http://127.0.0.1:4175"),
             "scope": "Answer evaluation; memory lifecycle and tenant isolation require fixture adapters"}
+
+
+@router.get("/capabilities")
+def capabilities():
+    """Machine-readable scope contract for external orchestrators such as BreakMyBot."""
+    return {
+        "contract": INTEGRATION_CONTRACT,
+        "service": "MemoryScope",
+        "capabilities": {
+            "external_agent_answer_evaluation": True,
+            "grounded_semantic_judging": True,
+            "persistent_memory_lifecycle": False,
+            "tenant_isolation_testing": False,
+        },
+        "agent_transport": "server_sent_events",
+        "requires_explicit_judge_consent": True,
+        "evidence_storage": "local_sqlite",
+        "pipeline": PROMPT_VERSION,
+    }
 
 
 @router.post("/runs", status_code=202)

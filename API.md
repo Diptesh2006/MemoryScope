@@ -40,3 +40,7 @@ Run statuses: pending, running, completed, failed, cancelled. Case statuses: pas
 `completed` means evaluation finished, not that every case passed. Judge/provider errors make the run `failed`.
 
 The previous `/api/benchmarks/*`, `/api/agents/*`, and `/api/analytics/*` synthetic endpoints are intentionally no longer mounted.
+# Beta integration contract
+
+`GET /api/beta/capabilities` returns the machine-readable `memoryscope-answer-evaluation-v1` contract. It reports external SSE answer evaluation and grounded judging as supported, and persistent memory lifecycle and tenant-isolation testing as unsupported. Orchestrators should check this manifest before submitting cases; it does not imply those unsupported capabilities.
+

@@ -44,6 +44,13 @@ def test_real_pipeline_contract(client, monkeypatch):
     assert len(client.get("/api/beta/runs").json()) == 1
     assert client.post(f"/api/beta/runs/{run_id}/cancel").status_code == 409
 
+def test_capability_manifest_distinguishes_answer_judging_from_memory_lifecycle(client):
+    manifest = client.get("/api/beta/capabilities").json()
+    assert manifest["contract"] == "memoryscope-answer-evaluation-v1"
+    assert manifest["capabilities"]["external_agent_answer_evaluation"] is True
+    assert manifest["capabilities"]["persistent_memory_lifecycle"] is False
+    assert manifest["requires_explicit_judge_consent"] is True
+
 @pytest.mark.parametrize("text,kind", [
     ("<html>OK</html>", "text/html"),
     ("data: [DONE]\n\n", "text/event-stream"),
