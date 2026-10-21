@@ -30,13 +30,14 @@ Edit `.env` (never commit it):
 
 ```dotenv
 NROUTER_API_KEY=your-key
+NROUTER_BASE_URL=https://api.nrouter.ai/v1
 NROUTER_JUDGE_MODEL=your-supported-model-id
 MEMORYSCOPE_AGENT_ORIGINS=http://127.0.0.1:4175
 ```
 
 There is no optional-judge switch or silent fallback. A model must be explicitly pinned for comparable runs.
 The pipeline is fixed; the model ID depends on your nRouter account. No model is claimed universally best.
-Requests use the [nRouter chat completions API](https://nrouter.ai/docs/api-reference/chat-completions).
+Requests use the configured nRouter-compatible chat completions base URL (default `https://api.nrouter.ai/v1`). Non-loopback provider URLs must use HTTPS. See the [nRouter chat completions API](https://nrouter.ai/docs/api-reference/chat-completions).
 
 Start the backend from the repository root:
 

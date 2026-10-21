@@ -14,6 +14,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(beta, "DB", tmp_path / "test.sqlite3")
     monkeypatch.setenv("NROUTER_API_KEY", "test-secret")
     monkeypatch.setenv("NROUTER_JUDGE_MODEL", "test-model")
+    monkeypatch.setenv("NROUTER_BASE_URL", "https://api.nrouter.ai/v1")
     monkeypatch.setenv("MEMORYSCOPE_AGENT_ORIGINS", "http://127.0.0.1:4175")
     with TestClient(app) as client:
         yield client
@@ -100,6 +101,28 @@ async def test_ungrounded_judge_rejected(monkeypatch):
     monkeypatch.setattr(beta, "request_bytes", ungrounded)
     with pytest.raises(ValueError):
         await beta.judge(beta.Case(**CASE), {"answer": "14 days"})
+
+@pytest.mark.asyncio
+async def test_judge_uses_configured_nrouter_base_url(monkeypatch):
+    monkeypatch.setenv("NROUTER_API_KEY", "test")
+    monkeypatch.setenv("NROUTER_JUDGE_MODEL", "test")
+    monkeypatch.setenv("NROUTER_BASE_URL", "https://router.example/v2/")
+    observed = {}
+    async def fake(url, payload, headers, timeout=60):
+        observed["url"] = url
+        verdict = dict(verdict="pass", rationale="Grounded.", answer_quote="14 days", reference_quote="14 days")
+        return json.dumps({"choices": [{"message": {"content": json.dumps(verdict)}}]}), "application/json"
+    monkeypatch.setattr(beta, "request_bytes", fake)
+    await beta.judge(beta.Case(**CASE), {"answer": "Refunds within 14 days."})
+    assert observed["url"] == "https://router.example/v2/chat/completions"
+
+@pytest.mark.asyncio
+async def test_judge_rejects_insecure_non_loopback_provider_base(monkeypatch):
+    monkeypatch.setenv("NROUTER_API_KEY", "test")
+    monkeypatch.setenv("NROUTER_JUDGE_MODEL", "test")
+    monkeypatch.setenv("NROUTER_BASE_URL", "http://router.example/v1")
+    with pytest.raises(ValueError, match="HTTPS"):
+        await beta.judge(beta.Case(**CASE), {"answer": "Refunds within 14 days."})
 
 def test_deterministic_fail_overrides_judge(client, monkeypatch):
     monkeypatch.setattr(beta, "request_bytes", fake_request)
